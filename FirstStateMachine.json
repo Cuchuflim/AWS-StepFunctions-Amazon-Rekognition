@@ -1,0 +1,131 @@
+{
+  "Comment": "A Step Function to process images",
+  "StartAt": "GetObjectAttributes",
+  "States": {
+    "GetObjectAttributes": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket.$": "$.bucket",
+        "Key.$": "$.key",
+        "ObjectAttributes": [
+          "ETag",
+          "ObjectSize",
+          "StorageClass"
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:getObjectAttributes",
+      "ResultPath": "$.attributes",
+      "Next": "DetectLabels"
+    },
+    "DetectLabels": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rekognition:detectLabels",
+      "Parameters": {
+        "Image": {
+          "S3Object": {
+            "Bucket.$": "$.bucket",
+            "Name.$": "$.key"
+          }
+        },
+        "MaxLabels": 1
+      },
+      "ResultPath": "$.labels",
+      "Next": "Choice"
+    },
+    "Choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.labels.Labels[0].Parents[0].Name",
+          "IsPresent": true,
+          "Next": "CopyObjectWithParent"
+        }
+      ],
+      "Default": "CopyObjectWithoutParent"
+    },
+    "CopyObjectWithoutParent": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket": "labelBucket",
+        "CopySource.$": "States.Format('{}/{}',$.bucket,$.key)",
+        "Key.$": "States.Format('{}/{}',$.labels.Labels[0].Name, $.key)"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+      "ResultPath": "$.copyResult",
+      "Next": "DynamoDB PutItemWithoutParent"
+    },
+    "DynamoDB PutItemWithoutParent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "metadataDB",
+        "Item": {
+          "id": {
+            "S.$": "$.attributes.ETag"
+          },
+          "bucket": {
+            "S": "labelBucket"
+          },
+          "key": {
+            "S.$": "$.key"
+          },
+          "label": {
+            "S.$": "$.labels.Labels[0].Name"
+          },
+          "time": {
+            "S.$": "$.attributes.LastModified"
+          },
+          "type": {
+            "S.$": "$.attributes.StorageClass"
+          },
+          "size": {
+            "S.$": "States.Format('{}', $.attributes.ObjectSize)"
+          }
+        }
+      },
+      "End": true
+    },
+    "CopyObjectWithParent": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket": "labelBucket",
+        "CopySource.$": "States.Format('{}/{}',$.bucket,$.key)",
+        "Key.$": "States.Format('{}/{}/{}',$.labels.Labels[0].Parents[0].Name,$.labels.Labels[0].Name, $.key)"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+      "ResultPath": "$.copyResult",
+      "Next": "DynamoDB PutItemWithParent"
+    },
+    "DynamoDB PutItemWithParent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "metadataDB",
+        "Item": {
+          "id": {
+            "S.$": "$.attributes.ETag"
+          },
+          "bucket": {
+            "S": "labelBucket"
+          },
+          "key": {
+            "S.$": "$.key"
+          },
+          "label": {
+            "S.$": "$.labels.Labels[0].Name"
+          },
+          "time": {
+            "S.$": "$.attributes.LastModified"
+          },
+          "type": {
+            "S.$": "$.attributes.StorageClass"
+          },
+          "size": {
+            "S.$": "States.Format('{}', $.attributes.ObjectSize)"
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
