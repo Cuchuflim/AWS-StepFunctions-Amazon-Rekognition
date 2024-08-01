@@ -1,0 +1,152 @@
+{
+  "Comment": "A Step Function to process images",
+  "StartAt": "ListObjects",
+  "States": {
+    "ListObjects": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket": "imagesBucket"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:listObjects",
+      "Next": "Map"
+    },
+    "Map": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "GetObjectAttributes",
+        "States": {
+          "GetObjectAttributes": {
+            "Type": "Task",
+            "Parameters": {
+              "Bucket": "imagesBucket",
+              "Key.$": "$.Key",
+              "ObjectAttributes": [
+                "ETag",
+                "ObjectSize",
+                "StorageClass"
+              ]
+            },
+            "Resource": "arn:aws:states:::aws-sdk:s3:getObjectAttributes",
+            "ResultPath": "$.attributes",
+            "Next": "DetectLabels"
+          },
+          "DetectLabels": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:rekognition:detectLabels",
+            "Parameters": {
+              "Image": {
+                "S3Object": {
+                  "Bucket": "imagesBucket",
+                  "Name.$": "$.Key"
+                }
+              },
+              "MaxLabels": 1
+            },
+            "ResultPath": "$.labels",
+            "Next": "CheckForParents"
+          },
+          "CheckForParents": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.labels.Labels[0].Parents[0].Name",
+                "IsPresent": true,
+                "Next": "CopyObjectWithParent"
+              }
+            ],
+            "Default": "CopyObjectWithoutParent"
+          },
+          "CopyObjectWithParent": {
+            "Type": "Task",
+            "Parameters": {
+              "Bucket": "labelBucket",
+              "CopySource.$": "States.Format('imagesBucket/{}',$.Key)",
+              "Key.$": "States.Format('{}/{}/{}',$.labels.Labels[0].Parents[0].Name,$.labels.Labels[0].Name, $.Key)"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+            "ResultPath": "$.copyResult",
+            "Next": "DynamoDB PutItemWithParent"
+          },
+          "CopyObjectWithoutParent": {
+            "Type": "Task",
+            "Parameters": {
+              "Bucket": "labelBucket",
+              "CopySource.$": "States.Format(imagesBucket/{}',$.Key)",
+              "Key.$": "States.Format('{}/{}',$.labels.Labels[0].Name, $.Key)"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+            "ResultPath": "$.copyResult",
+            "Next": "DynamoDB PutItemWithoutParent"
+          },
+          "DynamoDB PutItemWithParent": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Parameters": {
+              "TableName": "metadataDB",
+              "Item": {
+                "id": {
+                  "S.$": "$.attributes.ETag"
+                },
+                "bucket": {
+                  "S": "labelBucket"
+                },
+                "key": {
+                  "S.$": "$.Key"
+                },
+                "label": {
+                  "S.$": "$.labels.Labels[0].Name"
+                },
+                "time": {
+                  "S.$": "$.attributes.LastModified"
+                },
+                "type": {
+                  "S.$": "$.attributes.StorageClass"
+                },
+                "size": {
+                  "S.$": "States.Format('{}', $.attributes.ObjectSize)"
+                }
+              }
+            },
+            "End": true
+          },
+          "DynamoDB PutItemWithoutParent": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Parameters": {
+              "TableName": "metadataDB",
+              "Item": {
+                "id": {
+                  "S.$": "$.attributes.ETag"
+                },
+                "bucket": {
+                  "S": "labelBucket"
+                },
+                "key": {
+                  "S.$": "$.Key"
+                },
+                "label": {
+                  "S.$": "$.labels.Labels[0].Name"
+                },
+                "time": {
+                  "S.$": "$.attributes.LastModified"
+                },
+                "type": {
+                  "S.$": "$.attributes.StorageClass"
+                },
+                "size": {
+                  "S.$": "States.Format('{}', $.attributes.ObjectSize)"
+                }
+              }
+            },
+            "End": true
+          }
+        }
+      },
+      "ItemsPath": "$.Contents",
+      "End": true
+    }
+  }
+}
