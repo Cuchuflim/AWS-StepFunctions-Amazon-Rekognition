@@ -87,14 +87,11 @@
             "Parameters": {
               "TableName": "metadataDB",
               "Item": {
-                "id": {
-                  "S.$": "$.attributes.ETag"
+                "key_id": {
+                  "S.$": "$.key"
                 },
                 "bucket": {
                   "S": "labelBucket"
-                },
-                "key": {
-                  "S.$": "$.Key"
                 },
                 "label": {
                   "S.$": "$.labels.Labels[0].Name"
@@ -118,14 +115,11 @@
             "Parameters": {
               "TableName": "metadataDB",
               "Item": {
-                "id": {
-                  "S.$": "$.attributes.ETag"
+                "key_id": {
+                  "S.$": "$.key"
                 },
                 "bucket": {
                   "S": "labelBucket"
-                },
-                "key": {
-                  "S.$": "$.Key"
                 },
                 "label": {
                   "S.$": "$.labels.Labels[0].Name"
