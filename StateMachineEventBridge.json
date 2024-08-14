@@ -1,0 +1,143 @@
+{
+  "Comment": "A Step Function to process images",
+  "StartAt": "GetObjectAttributes",
+  "States": {
+    "GetObjectAttributes": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket.$": "$.detail.bucket.name",
+        "Key.$": "$.detail.object.key",
+        "ObjectAttributes": [
+          "ETag",
+          "ObjectSize",
+          "StorageClass"
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:getObjectAttributes",
+      "ResultPath": "$.attributes",
+      "Next": "DetectCustomLabels"
+    },
+    "DetectCustomLabels": {
+      "Type": "Task",
+      "Parameters": {
+        "Image": {
+          "S3Object": {
+            "Bucket.$": "$.bucket",
+            "Name.$": "$.key"
+          }
+        },
+        "ProjectVersionArn": "arn:aws:rekognition:us-east-1:xxxxxxx:project/project/version/version"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:rekognition:detectCustomLabels",
+      "ResultPath": "$.labels",
+      "Next": "Choice"
+    },
+    "Choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.labels.CustomLabels[1].Name",
+          "IsPresent": true,
+          "Next": "CopyObjectWithParent"
+        }
+      ],
+      "Default": "CopyObjectWithoutParent"
+    },
+    "CopyObjectWithoutParent": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket": "bucket-name",
+        "CopySource.$": "States.Format('{}/{}',$.bucket,$.key)",
+        "Key.$": "States.Format('{}/{}',$.labels.CustomLabels[0].Name, $.key)"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+      "ResultPath": "$.copyResult",
+      "Next": "DynamoDB PutItemWithoutParent"
+    },
+    "DynamoDB PutItemWithoutParent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "dynamodb",
+        "Item": {
+          "key_id": {
+            "S.$": "$.key"
+          },
+          "label": {
+            "S.$": "$.labels.CustomLabels[0].Name"
+          },
+          "confidence": {
+            "S.$": "States.Format('{}',$.labels.CustomLabels[0].Confidence)"
+          },
+          "sub_label": {
+            "S": ""
+          },
+          "sub_label_confidence": {
+            "S": ""
+          },
+          "bucket": {
+            "S": "bucket-name"
+          },
+          "time": {
+            "S.$": "$.attributes.LastModified"
+          },
+          "type": {
+            "S.$": "$.attributes.StorageClass"
+          },
+          "size": {
+            "S.$": "States.Format('{}', $.attributes.ObjectSize)"
+          }
+        }
+      },
+      "End": true
+    },
+    "CopyObjectWithParent": {
+      "Type": "Task",
+      "Parameters": {
+        "Bucket": "bucket-name",
+        "CopySource.$": "States.Format('{}/{}',$.bucket,$.key)",
+        "Key.$": "States.Format('{}/{}/{}',$.labels.CustomLabels[0].Name,$.labels.CustomLabels[1].Name, $.key)"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+      "ResultPath": "$.copyResult",
+      "Next": "DynamoDB PutItemWithParent"
+    },
+    "DynamoDB PutItemWithParent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "dynamodb",
+        "Item": {
+          "key_id": {
+            "S.$": "$.key"
+          },
+          "label": {
+            "S.$": "$.labels.CustomLabels[0].Name"
+          },
+          "confidence": {
+            "S.$": "States.Format('{}', $.labels.CustomLabels[0].Confidence)"
+          },
+          "sub_label": {
+            "S.$": "$.labels.CustomLabels[1].Name"
+          },
+          "sub_label_confidence": {
+            "S.$": "States.Format('{}', $.labels.CustomLabels[1].Confidence)"
+          },
+          "bucket": {
+            "S": "bucket-name"
+          },
+          "time": {
+            "S.$": "$.attributes.LastModified"
+          },
+          "type": {
+            "S.$": "$.attributes.StorageClass"
+          },
+          "size": {
+            "S.$": "States.Format('{}', $.attributes.ObjectSize)"
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
