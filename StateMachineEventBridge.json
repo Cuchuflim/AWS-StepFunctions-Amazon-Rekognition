@@ -22,11 +22,11 @@
       "Parameters": {
         "Image": {
           "S3Object": {
-            "Bucket.$": "$.bucket",
-            "Name.$": "$.key"
+            "Bucket.$": "$.detail.bucket.name",
+            "Name.$": "$.detail.object.key"
           }
         },
-        "ProjectVersionArn": "arn:aws:rekognition:us-east-1:xxxxxxx:project/project/version/version"
+        "ProjectVersionArn": "arn:aws:rekognition:us-east-1:xxxxxxx:project/CatOrDog/version/CatOrDog"
       },
       "Resource": "arn:aws:states:::aws-sdk:rekognition:detectCustomLabels",
       "ResultPath": "$.labels",
@@ -47,8 +47,8 @@
       "Type": "Task",
       "Parameters": {
         "Bucket": "bucket-name",
-        "CopySource.$": "States.Format('{}/{}',$.bucket,$.key)",
-        "Key.$": "States.Format('{}/{}',$.labels.CustomLabels[0].Name, $.key)"
+        "CopySource.$": "States.Format('{}/{}',$.detail.bucket.name,$.detail.object.key)",
+        "Key.$": "States.Format('{}/{}',$.labels.CustomLabels[0].Name, $.detail.object.key)"
       },
       "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
       "ResultPath": "$.copyResult",
@@ -58,10 +58,10 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:putItem",
       "Parameters": {
-        "TableName": "dynamodb",
+        "TableName": "AnimalsMetadata",
         "Item": {
           "key_id": {
-            "S.$": "$.key"
+            "S.$": "$.detail.object.key"
           },
           "label": {
             "S.$": "$.labels.CustomLabels[0].Name"
@@ -95,8 +95,8 @@
       "Type": "Task",
       "Parameters": {
         "Bucket": "bucket-name",
-        "CopySource.$": "States.Format('{}/{}',$.bucket,$.key)",
-        "Key.$": "States.Format('{}/{}/{}',$.labels.CustomLabels[0].Name,$.labels.CustomLabels[1].Name, $.key)"
+        "CopySource.$": "States.Format('{}/{}',$.detail.bucket.name,$.detail.object.key)",
+        "Key.$": "States.Format('{}/{}/{}',$.labels.CustomLabels[0].Name,$.labels.CustomLabels[1].Name, $.detail.object.key)"
       },
       "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
       "ResultPath": "$.copyResult",
@@ -106,10 +106,10 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:putItem",
       "Parameters": {
-        "TableName": "dynamodb",
+        "TableName": "AnimalsMetadata",
         "Item": {
           "key_id": {
-            "S.$": "$.key"
+            "S.$": "$.detail.object.key"
           },
           "label": {
             "S.$": "$.labels.CustomLabels[0].Name"
